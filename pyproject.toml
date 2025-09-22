@@ -1,0 +1,52 @@
+[project]
+name = "austin-housing"
+version = "0.1.0"
+description = "Analysis of Austin rental properties based on affordability, safety, and other quality-of-life parameters"
+authors = [
+    {name = "Stanley",email = "schanjr@users.noreply.github.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit (>=1.49.1,<2.0.0)",
+    "pandas (>=2.3.2,<3.0.0)",
+    "geopandas (>=1.1.1,<2.0.0)",
+    "matplotlib (>=3.10.6,<4.0.0)",
+    "plotly (>=6.3.0,<7.0.0)",
+    "folium (>=0.20.0,<0.21.0)",
+    "requests (>=2.32.5,<3.0.0)",
+    "openpyxl (>=3.1.5,<4.0.0)",
+    "numpy (>=2.3.3,<3.0.0)",
+    "scipy (>=1.16.2,<2.0.0)",
+    "streamlit-folium (>=0.25.1,<0.26.0)",
+    "beautifulsoup4 (>=4.13.5,<5.0.0)",
+    "tqdm (>=4.66.0,<5.0.0)"
+]
+
+[tool.poetry]
+packages = [
+    {include = "src"},
+    {include = "app"},
+    {include = "scripts"}
+]
+
+[tool.poetry.scripts]
+# Main commands
+generate-data = "scripts.generate_master_data:main"                   # Generate master dataset (RECOMMENDED)
+dashboard = "scripts.run_dashboard:main"                              # Run Austin Housing Dashboard
+
+# Data collection commands
+scrape-redfin = "scripts.scrapers.scraper_manager:scrape_redfin"  # Scrape Redfin listings
+scrape-all = "scripts.scrapers.scraper_manager:scrape_all"        # Scrape all sources
+geocode-all = "scripts.geocoding.geocoder:main"                   # Multi-threaded geocoding
+
+# Optional data enhancement commands
+fetch-walkscores = "scripts.data.walkscore_acquisition:main"      # WalkScore API integration
+fetch-austin-data = "scripts.data.austin_opendata_acquisition:main"  # Austin Open Data integration
+
+# Deprecated commands (use generate-data instead)
+scrape-zillow = "scripts.scrapers.scraper_manager:scrape_zillow"  # DEPRECATED - use scrape-redfin
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
