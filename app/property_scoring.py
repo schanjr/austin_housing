@@ -13,21 +13,35 @@ logger = logging.getLogger(__name__)
 class PropertyScorer:
     """Calculate comprehensive scores for rental properties."""
     
-    def __init__(self):
+    def __init__(self, custom_weights=None):
         self.root_dir = Path(__file__).parent.parent
         self.processed_data_dir = self.root_dir / "data" / "processed"
         
         # Load all data sources
         self._load_data_sources()
         
-        # Score weights (must sum to 1.0)
-        self.weights = {
+        # Default score weights (must sum to 1.0)
+        self.default_weights = {
             'affordability': 0.30,
             'safety': 0.25,
             'accessibility': 0.20,
             'neighborhood': 0.15,
             'environment': 0.10
         }
+        
+        # Use custom weights if provided, otherwise use defaults
+        self.weights = custom_weights if custom_weights else self.default_weights.copy()
+    
+    def update_weights(self, new_weights: Dict[str, float]):
+        """Update scoring weights. Weights must sum to 1.0."""
+        total = sum(new_weights.values())
+        if abs(total - 1.0) > 0.01:  # Allow small floating point errors
+            raise ValueError(f"Weights must sum to 1.0, got {total:.3f}")
+        self.weights = new_weights.copy()
+    
+    def get_default_weights(self) -> Dict[str, float]:
+        """Get the default scoring weights."""
+        return self.default_weights.copy()
     
     def _load_data_sources(self):
         """Load all data sources needed for scoring."""

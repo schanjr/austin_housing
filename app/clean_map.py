@@ -9,13 +9,15 @@ import streamlit as st
 from pathlib import Path
 import logging
 from folium import plugins
+from property_scoring import PropertyScorer
 
 logger = logging.getLogger(__name__)
 
 class CleanMap:
-    def __init__(self):
+    def __init__(self, custom_weights=None):
         """Initialize the clean map interface."""
         self.austin_center = [30.2672, -97.7431]
+        self.scorer = PropertyScorer(custom_weights=custom_weights)
     
     def create_property_map(self, properties_df, selected_zips=None):
         """Create a clean map showing individual property pins with listing links."""
@@ -105,10 +107,78 @@ class CleanMap:
                 icon_color = 'white'
                 icon = 'home'
             
+            # Get detailed score breakdown
+            try:
+                property_dict = {
+                    'zip_code': zip_code,
+                    'rent': rent
+                }
+                score_details = self.scorer.calculate_property_scores(property_dict)
+                scores = score_details['scores']
+                
+                # Create score breakdown HTML
+                score_breakdown_html = f"""
+                <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin: 15px 0;">
+                    <h5 style="margin: 0 0 10px 0; color: #333; font-size: 14px; font-weight: 600;">
+                        📊 Score Breakdown ({overall_score:.1f}/10)
+                    </h5>
+                    <div style="display: grid; gap: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: #666;">💰 Affordability ({scores['affordability']['weight']:.0%})</span>
+                            <span style="font-weight: 600; color: #333;">{scores['affordability']['score']:.1f}/10</span>
+                        </div>
+                        <div style="font-size: 11px; color: #888; margin-bottom: 5px;">
+                            {scores['affordability']['explanation']}
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: #666;">🛡️ Safety ({scores['safety']['weight']:.0%})</span>
+                            <span style="font-weight: 600; color: #333;">{scores['safety']['score']:.1f}/10</span>
+                        </div>
+                        <div style="font-size: 11px; color: #888; margin-bottom: 5px;">
+                            {scores['safety']['explanation']}
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: #666;">🚶 Accessibility ({scores['accessibility']['weight']:.0%})</span>
+                            <span style="font-weight: 600; color: #333;">{scores['accessibility']['score']:.1f}/10</span>
+                        </div>
+                        <div style="font-size: 11px; color: #888; margin-bottom: 5px;">
+                            {scores['accessibility']['explanation']}
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: #666;">🏘️ Neighborhood ({scores['neighborhood']['weight']:.0%})</span>
+                            <span style="font-weight: 600; color: #333;">{scores['neighborhood']['score']:.1f}/10</span>
+                        </div>
+                        <div style="font-size: 11px; color: #888; margin-bottom: 5px;">
+                            {scores['neighborhood']['explanation']}
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: #666;">🌿 Environment ({scores['environment']['weight']:.0%})</span>
+                            <span style="font-weight: 600; color: #333;">{scores['environment']['score']:.1f}/10</span>
+                        </div>
+                        <div style="font-size: 11px; color: #888;">
+                            {scores['environment']['explanation']}
+                        </div>
+                    </div>
+                </div>
+                """
+            except Exception as e:
+                logger.error(f"Error calculating score breakdown: {e}")
+                score_breakdown_html = f"""
+                <div style="background: #fff3cd; padding: 10px; border-radius: 5px; margin: 15px 0;">
+                    <p style="margin: 0; color: #856404; font-size: 12px;">
+                        ⚠️ Score breakdown unavailable
+                    </p>
+                </div>
+                """
+
             # Clean, detailed popup
             popup_html = f"""
             <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                        font-size: 14px; padding: 15px; min-width: 300px; max-width: 350px;">
+                        font-size: 14px; padding: 15px; min-width: 350px; max-width: 450px;">
                 <h4 style="margin: 0 0 15px 0; color: #333; font-weight: 600; line-height: 1.3;">
                     {address}
                 </h4>
@@ -121,7 +191,7 @@ class CleanMap:
                         </p>
                     </div>
                     <div>
-                        <p style="margin: 0; color: #666; font-size: 12px;">SCORE</p>
+                        <p style="margin: 0; color: #666; font-size: 12px;">OVERALL SCORE</p>
                         <p style="margin: 0; font-weight: 600; font-size: 18px; color: {color};">
                             {overall_score:.1f}/10
                         </p>
@@ -142,6 +212,8 @@ class CleanMap:
                         <p style="margin: 0; font-weight: 500; color: #333;">{sqft}</p>
                     </div>
                 </div>
+                
+                {score_breakdown_html}
                 
                 <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
                     <p style="margin: 0; color: #666; font-size: 12px;">LOCATION</p>
@@ -164,7 +236,7 @@ class CleanMap:
             # Add individual marker at exact geocoded location (NO CLUSTERING)
             folium.Marker(
                 location=[lat, lon],
-                popup=folium.Popup(popup_html, max_width=400),
+                popup=folium.Popup(popup_html, max_width=500),
                 tooltip=f"{address} • ${rent:,.0f}/mo • {overall_score:.1f}/10",
                 icon=folium.Icon(
                     color='red' if overall_score < 5 else 'orange' if overall_score < 7 else 'green',

@@ -220,7 +220,19 @@ def main():
         
         # Initialize components
         property_display = PropertyDisplay()
-        clean_map = CleanMap()
+        
+        # Initialize custom weights if not present
+        if 'custom_weights' not in st.session_state:
+            st.session_state.custom_weights = {
+                'affordability': 0.30,
+                'safety': 0.25,
+                'accessibility': 0.20,
+                'neighborhood': 0.15,
+                'environment': 0.10
+            }
+        
+        # Create CleanMap with custom weights
+        clean_map = CleanMap(custom_weights=st.session_state.custom_weights)
         
         # Clean Sidebar Design using Streamlit native components
         with st.sidebar:
@@ -373,6 +385,106 @@ def main():
             st.divider()
             if st.button("🔄 Reset All Filters", help="Reset all filters to default values", key="reset_filters", width="stretch"):
                 st.rerun()
+            
+            # Scoring Configuration Section
+            st.divider()
+            st.header("⚖️ Scoring Configuration")
+            
+            with st.expander("🎯 Customize Scoring Weights", expanded=False):
+                st.write("**Adjust the importance of each factor in the overall score:**")
+                st.caption("All weights must sum to 100%. Current scoring uses these weights to calculate the overall property score.")
+                
+                # Create input fields for each weight
+                affordability_weight = st.slider(
+                    "💰 Affordability (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(st.session_state.custom_weights['affordability'] * 100),
+                    step=5,
+                    help="How much affordability impacts the overall score"
+                ) / 100.0
+                
+                safety_weight = st.slider(
+                    "🛡️ Safety (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(st.session_state.custom_weights['safety'] * 100),
+                    step=5,
+                    help="How much safety impacts the overall score"
+                ) / 100.0
+                
+                accessibility_weight = st.slider(
+                    "🚶 Accessibility (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(st.session_state.custom_weights['accessibility'] * 100),
+                    step=5,
+                    help="How much walkability/transit impacts the overall score"
+                ) / 100.0
+                
+                neighborhood_weight = st.slider(
+                    "🏘️ Neighborhood (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(st.session_state.custom_weights['neighborhood'] * 100),
+                    step=5,
+                    help="How much neighborhood quality impacts the overall score"
+                ) / 100.0
+                
+                environment_weight = st.slider(
+                    "🌿 Environment (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(st.session_state.custom_weights['environment'] * 100),
+                    step=5,
+                    help="How much environmental quality impacts the overall score"
+                ) / 100.0
+                
+                # Calculate total and show validation
+                total_weight = affordability_weight + safety_weight + accessibility_weight + neighborhood_weight + environment_weight
+                
+                if abs(total_weight - 1.0) > 0.01:
+                    st.error(f"⚠️ Weights must sum to 100%. Current total: {total_weight:.1%}")
+                    save_disabled = True
+                else:
+                    st.success(f"✅ Weights sum to {total_weight:.1%}")
+                    save_disabled = False
+                
+                # Save button
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💾 Save Weights", disabled=save_disabled, help="Apply custom weights for this session"):
+                        st.session_state.custom_weights = {
+                            'affordability': affordability_weight,
+                            'safety': safety_weight,
+                            'accessibility': accessibility_weight,
+                            'neighborhood': neighborhood_weight,
+                            'environment': environment_weight
+                        }
+                        st.session_state.weights_updated = True
+                        st.success("✅ Custom weights saved! Map will update with new scoring.")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🔄 Reset to Default", help="Reset to default scoring weights"):
+                        st.session_state.custom_weights = {
+                            'affordability': 0.30,
+                            'safety': 0.25,
+                            'accessibility': 0.20,
+                            'neighborhood': 0.15,
+                            'environment': 0.10
+                        }
+                        st.session_state.weights_updated = True
+                        st.success("✅ Reset to default weights!")
+                        st.rerun()
+                
+                # Show current weights
+                st.write("**Current Weights:**")
+                for factor, weight in st.session_state.custom_weights.items():
+                    st.write(f"• {factor.title()}: {weight:.0%}")
+                
+                if 'weights_updated' in st.session_state and st.session_state.weights_updated:
+                    st.info("🔄 Weights have been updated. The map and scores reflect your custom configuration.")
         
         # Apply all filters using optimized cached function
         filtered_df = apply_filters_optimized(
@@ -453,7 +565,7 @@ def main():
                 # Use stable key based on filter state to prevent unnecessary re-rendering
                 filter_hash = hash(str(sorted(st.session_state.selected_zips)) + str(rent_range) + str(min_bedrooms) + str(min_overall_score))
                 map_key = f"map_{filter_hash}"
-                map_data = st_folium(property_map, width=700, height=500, key=map_key)
+                map_data = st_folium(property_map, width=1200, height=700, key=map_key)
             
             # Native info display
             st.info("📍 Property pins show exact locations with direct links to listings")
