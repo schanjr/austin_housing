@@ -2,13 +2,12 @@
 New property-focused dashboard for Austin Housing analysis.
 Replaces complex heat maps with intuitive property scoring and visualization.
 """
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-from streamlit_folium import st_folium
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
 
 # Add the app directory to the path for imports
 app_dir = Path(__file__).parent
@@ -17,39 +16,39 @@ if str(app_dir) not in sys.path:
 
 from property_scoring import PropertyScorer
 from property_display import PropertyDisplay
-from clean_map import CleanMap
+from pydeck_clean_map import PyDeckCleanMap
 
 # Import data loading functions from existing modules
 sys.path.insert(0, str(app_dir.parent / "src"))
 from src.data.listing_loader import listing_loader
-from analysis.data_processing import load_processed_data
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def create_property_table_from_precalc(properties_df):
     """Create property table from pre-calculated scores for instant performance."""
     try:
         # Create display table with pre-calculated scores
         display_properties = []
-        
+
         for _, row in properties_df.iterrows():
             # Get listing URL
             listing_url = row.get('url', row.get('listing_url', ''))
             property_id = row.get('id', '')
             address = row.get('address', 'Unknown')
-            
+
             # Generate Redfin URL if we have property ID but no URL
             if not listing_url and property_id and 'redfin' in str(property_id).lower():
                 numeric_id = str(property_id).replace('redfin-', '')
                 listing_url = f"https://www.redfin.com/TX/Austin/{numeric_id}"
-            
+
             # If still no URL, create Redfin search link with instructions
             if not listing_url and address != 'Unknown':
                 # Create Redfin search URL and format with instructions
                 redfin_search_url = "https://www.redfin.com/city/30818/TX/Austin"
                 listing_url = f"🔍 Search on Redfin: {redfin_search_url} (Copy & paste: {address})"
-            
+
             display_property = {
                 'Address': address,
                 'ZIP': row.get('zip_code', ''),
@@ -70,12 +69,13 @@ def create_property_table_from_precalc(properties_df):
                 '_environment_numeric': row.get('environment_score', 0)
             }
             display_properties.append(display_property)
-        
+
         return pd.DataFrame(display_properties)
-        
+
     except Exception as e:
         logger.error(f"Error creating property table from pre-calculated scores: {e}")
         return pd.DataFrame()
+
 
 def create_neighborhood_summary_from_precalc(properties_df):
     """Create neighborhood summary from pre-calculated scores for instant performance."""
@@ -84,15 +84,15 @@ def create_neighborhood_summary_from_precalc(properties_df):
         zip_groups = properties_df.groupby('zip_code').agg({
             'overall_score': ['mean', 'count'],
             'safety_score': 'mean',
-            'accessibility_score': 'mean', 
+            'accessibility_score': 'mean',
             'neighborhood_score': 'mean',
             'environment_score': 'mean',
             'rent': 'mean'
         }).round(1)
-        
+
         # Flatten column names
         zip_groups.columns = ['Overall Score', 'Property Count', 'Safety', 'Walkability', 'Neighborhood', 'Environment', 'Avg Rent']
-        
+
         # Format for display
         zip_summary = []
         for zip_code, row in zip_groups.iterrows():
@@ -101,7 +101,7 @@ def create_neighborhood_summary_from_precalc(properties_df):
                 'Properties': int(row['Property Count']),
                 'Overall Score': f"{row['Overall Score']:.1f}/10",
                 'Safety': f"{row['Safety']:.1f}/10",
-                'Walkability': f"{row['Walkability']:.1f}/10", 
+                'Walkability': f"{row['Walkability']:.1f}/10",
                 'Neighborhood': f"{row['Neighborhood']:.1f}/10",
                 'Environment': f"{row['Environment']:.1f}/10",
                 'Avg Rent': f"${row['Avg Rent']:,.0f}",
@@ -113,14 +113,15 @@ def create_neighborhood_summary_from_precalc(properties_df):
                 '_rent_numeric': row['Avg Rent']
             }
             zip_summary.append(summary)
-        
+
         # Sort by overall score
         zip_df = pd.DataFrame(zip_summary).sort_values('_overall_numeric', ascending=False)
         return zip_df
-        
+
     except Exception as e:
         logger.error(f"Error creating neighborhood summary from pre-calculated scores: {e}")
         return pd.DataFrame()
+
 
 @st.cache_data(ttl=3600, show_spinner=False)  # Cache for 1 hour
 def load_property_data():
@@ -128,7 +129,7 @@ def load_property_data():
     try:
         # Load the master dataset - ONE authoritative source
         master_path = Path(__file__).parent.parent / "data" / "processed" / "master_properties.csv"
-        
+
         if master_path.exists():
             logger.info("Loading master property dataset...")
             # Optimize data loading with specific dtypes for better performance
@@ -149,18 +150,19 @@ def load_property_data():
             # Fallback to original loading if pre-calculated scores don't exist
             logger.warning("Pre-calculated scores not found, loading original data...")
             listings_data = listing_loader.get_listings()
-            
+
             if listings_data is None or listings_data.empty:
                 st.error("No rental listings data available. Please run data collection first.")
                 return pd.DataFrame()
-            
+
             logger.info(f"Loaded {len(listings_data)} properties (without pre-calculated scores)")
             return listings_data
-        
+
     except Exception as e:
         logger.error(f"Error loading property data: {e}")
         st.error(f"Error loading property data: {e}")
         return pd.DataFrame()
+
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_filter_ranges(properties_df):
@@ -172,23 +174,25 @@ def get_filter_ranges(properties_df):
         'available_zips': sorted(properties_df['zip_code'].unique())
     }
 
+
 @st.cache_data(show_spinner=False)
-def apply_filters_optimized(properties_df, zip_codes, rent_range, min_bedrooms, min_overall_score, 
-                           min_safety_score, min_walkability_score, min_neighborhood_score, min_environment_score):
+def apply_filters_optimized(properties_df, zip_codes, rent_range, min_bedrooms, min_overall_score,
+                            min_safety_score, min_walkability_score, min_neighborhood_score, min_environment_score):
     """Optimized filtering function with caching."""
     # Single-pass filtering with all conditions
     mask = (
-        properties_df['zip_code'].isin(zip_codes) &
-        (properties_df['rent'] >= rent_range[0]) &
-        (properties_df['rent'] <= rent_range[1]) &
-        (properties_df['bedrooms'] >= min_bedrooms) &
-        (properties_df['overall_score'] >= min_overall_score) &
-        (properties_df['safety_score'] >= min_safety_score) &
-        (properties_df['accessibility_score'] >= min_walkability_score) &
-        (properties_df['neighborhood_score'] >= min_neighborhood_score) &
-        (properties_df['environment_score'] >= min_environment_score)
+            properties_df['zip_code'].isin(zip_codes) &
+            (properties_df['rent'] >= rent_range[0]) &
+            (properties_df['rent'] <= rent_range[1]) &
+            (properties_df['bedrooms'] >= min_bedrooms) &
+            (properties_df['overall_score'] >= min_overall_score) &
+            (properties_df['safety_score'] >= min_safety_score) &
+            (properties_df['accessibility_score'] >= min_walkability_score) &
+            (properties_df['neighborhood_score'] >= min_neighborhood_score) &
+            (properties_df['environment_score'] >= min_environment_score)
     )
     return properties_df[mask].copy()
+
 
 # Removed custom CSS - using Streamlit native components instead
 
@@ -200,27 +204,27 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+
     # Clean header using Streamlit native components
     st.title("🏠 Austin Housing Dashboard")
     st.markdown("**Find the perfect rental property with detailed scoring and real data**")
     st.divider()
-    
+
     # Initialize components
     property_display = PropertyDisplay()
-    
+
     # Load data with error handling
     try:
         with st.spinner("Loading property data..."):
             properties_df = load_property_data()
-        
+
         if properties_df.empty:
             st.error("No property data available. Please check data sources.")
             st.stop()
-        
+
         # Initialize components
         property_display = PropertyDisplay()
-        
+
         # Initialize custom weights if not present
         if 'custom_weights' not in st.session_state:
             st.session_state.custom_weights = {
@@ -230,36 +234,36 @@ def main():
                 'neighborhood': 0.15,
                 'environment': 0.10
             }
-        
-        # Create CleanMap with custom weights
-        clean_map = CleanMap(custom_weights=st.session_state.custom_weights)
-        
+
+        # Create PyDeckCleanMap with custom weights
+        clean_map = PyDeckCleanMap(custom_weights=st.session_state.custom_weights)
+
         # Clean Sidebar Design using Streamlit native components
         with st.sidebar:
             st.header("🎯 Area Selection")
-            
+
             # Initialize selected ZIP codes in session state
             if 'selected_zips' not in st.session_state:
                 st.session_state.selected_zips = ['78701', '78702', '78703']  # Default selection
-            
+
             # Get pre-calculated filter ranges for performance
             filter_ranges = get_filter_ranges(properties_df)
             available_zips = filter_ranges['available_zips']
-            
+
             st.write("**Select ZIP codes to explore:**")
-            
+
             # Quick action buttons using Streamlit columns
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("✅ All", key="select_all", help="Select all available ZIP codes", width="stretch"):
                     st.session_state.selected_zips = available_zips
                     st.rerun()
-            
+
             with col2:
                 if st.button("❌ Clear", key="clear_all", help="Clear all ZIP code selections", width="stretch"):
                     st.session_state.selected_zips = []
                     st.rerun()
-            
+
             # Main ZIP code multiselect
             selected_zips = st.multiselect(
                 "Available ZIP Codes:",
@@ -267,33 +271,33 @@ def main():
                 default=st.session_state.selected_zips,
                 help="Choose specific areas to view properties"
             )
-            
+
             # Update session state
             st.session_state.selected_zips = selected_zips if selected_zips else st.session_state.selected_zips
-            
+
             # Show selection summary using native Streamlit components
             if st.session_state.selected_zips:
                 st.success(f"📍 {len(st.session_state.selected_zips)} ZIP codes selected")
             else:
                 st.warning("⚠️ Please select at least one ZIP code")
-        
+
         # Early exit if no ZIP codes selected
         if not st.session_state.selected_zips:
             st.warning("Please select at least one ZIP code to view properties.")
             st.stop()
-        
+
         # Advanced Filters Section using Streamlit native components
         with st.sidebar:
             st.header("🔍 Advanced Filters")
-            
+
             # Use pre-calculated ranges for better performance
             rent_min = filter_ranges['rent_min']
             rent_max = filter_ranges['rent_max']
             available_bedrooms = filter_ranges['available_bedrooms']
-            
+
             # Rent Range Filter
             st.subheader("💰 Rent Range")
-            
+
             rent_range = st.slider(
                 "Monthly Rent ($)",
                 min_value=rent_min,
@@ -302,33 +306,33 @@ def main():
                 step=50,
                 help="Filter properties by rent range"
             )
-            
+
             # Show selected range using native info box
             st.info(f"Selected range: ${rent_range[0]:,} - ${rent_range[1]:,} per month")
-            
+
             # Bedrooms Filter
             st.subheader("🛏️ Bedrooms")
             min_bedrooms = st.selectbox(
                 "Minimum Bedrooms",
                 options=[0] + available_bedrooms,
-                index=0,
+                index=3,
                 help="Minimum number of bedrooms required"
             )
-            
+
             # Overall Score Filter
             st.subheader("⭐ Overall Score")
             min_overall_score = st.slider(
                 "Minimum Overall Score",
                 min_value=0.0,
                 max_value=10.0,
-                value=0.0,
+                value=3.0,
                 step=0.1,
                 help="Minimum overall livability score (0-10)"
             )
-            
+
             # Individual Score Filters using native expanders
             st.subheader("📊 Individual Scores")
-            
+
             with st.expander("🛡️ Safety Score"):
                 min_safety_score = st.slider(
                     "Minimum Safety Score",
@@ -341,7 +345,7 @@ def main():
                 )
                 if min_safety_score > 0:
                     st.caption(f"Showing properties with safety score ≥ {min_safety_score:.1f}")
-            
+
             with st.expander("🚶 Walkability Score"):
                 min_walkability_score = st.slider(
                     "Minimum Walkability Score",
@@ -354,7 +358,7 @@ def main():
                 )
                 if min_walkability_score > 0:
                     st.caption(f"Showing properties with walkability score ≥ {min_walkability_score:.1f}")
-            
+
             with st.expander("🏛️ Neighborhood Score"):
                 min_neighborhood_score = st.slider(
                     "Minimum Neighborhood Score",
@@ -367,7 +371,7 @@ def main():
                 )
                 if min_neighborhood_score > 0:
                     st.caption(f"Showing properties with neighborhood score ≥ {min_neighborhood_score:.1f}")
-            
+
             with st.expander("🌱 Environment Score"):
                 min_environment_score = st.slider(
                     "Minimum Environment Score",
@@ -380,20 +384,20 @@ def main():
                 )
                 if min_environment_score > 0:
                     st.caption(f"Showing properties with environment score ≥ {min_environment_score:.1f}")
-            
+
             # Filter Reset Button using native Streamlit button
             st.divider()
             if st.button("🔄 Reset All Filters", help="Reset all filters to default values", key="reset_filters", width="stretch"):
                 st.rerun()
-            
+
             # Scoring Configuration Section
             st.divider()
             st.header("⚖️ Scoring Configuration")
-            
+
             with st.expander("🎯 Customize Scoring Weights", expanded=False):
                 st.write("**Adjust the importance of each factor in the overall score:**")
                 st.caption("All weights must sum to 100%. Current scoring uses these weights to calculate the overall property score.")
-                
+
                 # Create input fields for each weight
                 affordability_weight = st.slider(
                     "💰 Affordability (%)",
@@ -403,7 +407,7 @@ def main():
                     step=5,
                     help="How much affordability impacts the overall score"
                 ) / 100.0
-                
+
                 safety_weight = st.slider(
                     "🛡️ Safety (%)",
                     min_value=0,
@@ -412,7 +416,7 @@ def main():
                     step=5,
                     help="How much safety impacts the overall score"
                 ) / 100.0
-                
+
                 accessibility_weight = st.slider(
                     "🚶 Accessibility (%)",
                     min_value=0,
@@ -421,7 +425,7 @@ def main():
                     step=5,
                     help="How much walkability/transit impacts the overall score"
                 ) / 100.0
-                
+
                 neighborhood_weight = st.slider(
                     "🏘️ Neighborhood (%)",
                     min_value=0,
@@ -430,7 +434,7 @@ def main():
                     step=5,
                     help="How much neighborhood quality impacts the overall score"
                 ) / 100.0
-                
+
                 environment_weight = st.slider(
                     "🌿 Environment (%)",
                     min_value=0,
@@ -439,17 +443,17 @@ def main():
                     step=5,
                     help="How much environmental quality impacts the overall score"
                 ) / 100.0
-                
+
                 # Calculate total and show validation
                 total_weight = affordability_weight + safety_weight + accessibility_weight + neighborhood_weight + environment_weight
-                
+
                 if abs(total_weight - 1.0) > 0.01:
                     st.error(f"⚠️ Weights must sum to 100%. Current total: {total_weight:.1%}")
                     save_disabled = True
                 else:
                     st.success(f"✅ Weights sum to {total_weight:.1%}")
                     save_disabled = False
-                
+
                 # Save button
                 col1, col2 = st.columns(2)
                 with col1:
@@ -464,7 +468,7 @@ def main():
                         st.session_state.weights_updated = True
                         st.success("✅ Custom weights saved! Map will update with new scoring.")
                         st.rerun()
-                
+
                 with col2:
                     if st.button("🔄 Reset to Default", help="Reset to default scoring weights"):
                         st.session_state.custom_weights = {
@@ -477,15 +481,15 @@ def main():
                         st.session_state.weights_updated = True
                         st.success("✅ Reset to default weights!")
                         st.rerun()
-                
+
                 # Show current weights
                 st.write("**Current Weights:**")
                 for factor, weight in st.session_state.custom_weights.items():
                     st.write(f"• {factor.title()}: {weight:.0%}")
-                
+
                 if 'weights_updated' in st.session_state and st.session_state.weights_updated:
                     st.info("🔄 Weights have been updated. The map and scores reflect your custom configuration.")
-        
+
         # Apply all filters using optimized cached function
         filtered_df = apply_filters_optimized(
             properties_df,
@@ -498,21 +502,21 @@ def main():
             min_neighborhood_score,
             min_environment_score
         )
-        
+
         # Enhanced status display using Streamlit native components
         with st.sidebar:
             total_properties = len(properties_df)
             filtered_count = len(filtered_df)
             filter_percentage = (filtered_count / total_properties * 100) if total_properties > 0 else 0
-            
+
             # Status display using native metrics
             st.divider()
             st.metric(
-                "Properties Found", 
+                "Properties Found",
                 f"{filtered_count:,}",
                 delta=f"{filter_percentage:.1f}% of total"
             )
-            
+
             # Show active filters summary using native components
             active_filters = []
             if rent_range != (rent_min, rent_max):
@@ -529,64 +533,124 @@ def main():
                 active_filters.append(f"Neighborhood: {min_neighborhood_score:.1f}+")
             if min_environment_score > 0:
                 active_filters.append(f"Environment: {min_environment_score:.1f}+")
-            
+
             if active_filters:
                 filters_text = " • ".join(active_filters)
                 st.info(f"🔍 **Active Filters:** {filters_text}")
             else:
                 st.success("✓ No filters applied - showing all properties in selected areas")
-        
+
     except Exception as e:
         st.error(f"Error loading dashboard: {e}")
         logger.error(f"Dashboard loading error: {e}")
         st.stop()
-    
+
     # Main content area using Streamlit native layout
     col1, col2 = st.columns([2, 1], gap="large")
-    
+
     with col1:
         # Clean section header using native components
         st.header("🗺️ Property Map")
         st.caption("Interactive map showing filtered properties with direct listing links")
-        
+
         if not filtered_df.empty:
             # Optimize map rendering for large datasets
             with st.spinner("Loading property map..."):
                 # Limit map markers for performance - sample if too many properties
                 map_df = filtered_df
                 if len(filtered_df) > 1000:
-                    st.info(f"📍 Showing sample of {min(1000, len(filtered_df))} properties on map for performance. All {len(filtered_df)} properties are included in stats and filtering.")
+                    st.info(
+                        f"📍 Showing sample of {min(1000, len(filtered_df))} properties on map for performance. All {len(filtered_df)} properties are included in stats and filtering.")
                     map_df = filtered_df.sample(n=1000, random_state=42)  # Consistent sampling
-                
+
                 property_map = clean_map.create_property_map(
-                    map_df, 
+                    map_df,
                     selected_zips=st.session_state.selected_zips
                 )
-                # Use stable key based on filter state to prevent unnecessary re-rendering
-                filter_hash = hash(str(sorted(st.session_state.selected_zips)) + str(rent_range) + str(min_bedrooms) + str(min_overall_score))
-                map_key = f"map_{filter_hash}"
-                map_data = st_folium(property_map, width=1200, height=700, key=map_key)
-            
-            # Native info display
-            st.info("📍 Property pins show exact locations with direct links to listings")
-            
-            # Handle property clicks with native feedback
-            if map_data and map_data.get('last_object_clicked_tooltip'):
-                clicked_item = map_data['last_object_clicked_tooltip']
-                st.success(f"🏠 **Selected**: {clicked_item}")
-            
+
+                if property_map:
+                    # Use stable key based on filter state to prevent unnecessary re-rendering
+                    filter_hash = hash(str(sorted(st.session_state.selected_zips)) + str(rent_range) + str(min_bedrooms) + str(min_overall_score))
+                    map_key = f"pydeck_map_{filter_hash}"
+
+                    # Display PyDeck map with interactive click handling
+                    event = st.pydeck_chart(
+                        property_map,
+                        key=map_key,
+                        height=700,
+                        on_select="rerun",
+                        selection_mode="single-object"
+                    )
+
+                    # Get selection from the event object
+                    selection = event.selection if hasattr(event, 'selection') else event
+
+                else:
+                    st.warning("No properties with valid coordinates found for the selected filters.")
+                    map_data = None
+
+
+            # Handle PyDeck map clicks for interactive property selection
+            # Based on debug logs: selection has direct 'objects' attribute, not 'selection.objects'
+            if (selection and hasattr(selection, 'objects') and
+                'properties' in selection.objects and
+                len(selection.objects['properties']) > 0):
+
+                # Get the clicked property data
+                clicked_property = selection.objects['properties'][0]
+
+                # Store in session state for persistence
+                st.session_state['selected_map_property'] = clicked_property
+
             # Native caption
             st.caption(f"Displaying {len(filtered_df):,} properties in ZIP codes: {', '.join(st.session_state.selected_zips)}")
         else:
             # Native empty state
             st.warning("🔍 **No properties match your filters**")
             st.info("Try adjusting your criteria to see more results")
-    
+
     with col2:
-        # Clean section header using native components
-        st.header("📊 Quick Stats")
-        st.caption("Key insights from filtered properties")
-        
+        # Interactive Map Instructions
+        st.header("🎯 Interactive Property Selection")
+        st.info("👆 **Click any property marker on the map** to view details and get direct Redfin listing links!")
+
+        # Display clicked property details in the right column
+        if 'selected_map_property' in st.session_state:
+            clicked_property = st.session_state['selected_map_property']
+            
+            # Display clicked property information
+            st.success(f"🏠 **Selected Property:** {clicked_property.get('address', 'Unknown Address')}")
+
+            col_info1, col_info2 = st.columns(2)
+            with col_info1:
+                st.write(f"💰 **Rent:** ${clicked_property.get('rent', 'N/A')}/month")
+                st.write(f"🛏️ **Bedrooms:** {clicked_property.get('bedrooms', 'N/A')}")
+                st.write(f"🚿 **Bathrooms:** {clicked_property.get('bathrooms', 'N/A')}")
+            with col_info2:
+                st.write(f"📐 **Sqft:** {clicked_property.get('sqft', 'N/A')}")
+                st.write(f"📍 **ZIP:** {clicked_property.get('zip_code', 'N/A')}")
+                st.write(f"⭐ **Score:** {clicked_property.get('overall_score', 'N/A')}/10")
+
+            # Show clickable Redfin link
+            listing_url = clicked_property.get('listing_url', '') or clicked_property.get('url', '')
+            if listing_url and listing_url != '#':
+                st.markdown(f"### [🔗 View This Listing on Redfin]({listing_url})")
+                st.success("✅ Direct listing URL available - click to view!")
+            else:
+                # Create search URL as fallback
+                address = clicked_property.get('address', '')
+                zip_code = clicked_property.get('zip_code', '')
+                search_query = f"{address}, Austin, TX {zip_code}".replace(' ', '+')
+                search_url = f"https://www.redfin.com/city/30818/TX/Austin?search_query={search_query}"
+                st.markdown(f"### [🔍 Search for This Property on Redfin]({search_url})")
+                st.info("🔍 No direct listing URL - will search Redfin for this address")
+        else:
+            st.caption("Click any property marker on the map to view details here")
+
+        # Quick Stats section (compact horizontal layout)
+        st.markdown("---")
+        st.subheader("📊 Quick Stats")
+
         if not filtered_df.empty:
             # Calculate comprehensive statistics efficiently
             stats = {
@@ -596,56 +660,60 @@ def main():
                 'avg_overall_score': filtered_df['overall_score'].mean(),
                 'avg_bedrooms': filtered_df['bedrooms'].mean()
             }
-            
-            # Native metrics using Streamlit's built-in components
-            st.metric(
-                "Properties Found", 
-                f"{len(filtered_df):,}",
-                delta=f"{filter_percentage:.1f}% of total"
-            )
-            
-            st.metric(
-                "Average Rent", 
-                f"${stats['avg_rent']:,.0f}",
-                delta=f"Range: ${stats['min_rent']:,.0f} - ${stats['max_rent']:,.0f}"
-            )
-            
-            quality = 'Excellent' if stats['avg_overall_score'] >= 8 else 'Good' if stats['avg_overall_score'] >= 6 else 'Fair' if stats['avg_overall_score'] >= 4 else 'Poor'
-            st.metric(
-                "Average Score", 
-                f"{stats['avg_overall_score']:.1f}/10",
-                delta=f"{quality} Quality"
-            )
-            
-            # Rent distribution
+
+            # Horizontal metrics layout using columns
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+
+            with col_stat1:
+                st.metric(
+                    "Properties Found",
+                    f"{len(filtered_df):,}",
+                    delta=f"{filter_percentage:.1f}% of total"
+                )
+
+            with col_stat2:
+                st.metric(
+                    "Average Rent",
+                    f"${stats['avg_rent']:,.0f}",
+                    delta=f"${stats['min_rent']:,.0f} - ${stats['max_rent']:,.0f}"
+                )
+
+            with col_stat3:
+                quality = 'Excellent' if stats['avg_overall_score'] >= 8 else 'Good' if stats['avg_overall_score'] >= 6 else 'Fair' if stats['avg_overall_score'] >= 4 else 'Poor'
+                st.metric(
+                    "Average Score",
+                    f"{stats['avg_overall_score']:.1f}/10",
+                    delta=f"{quality} Quality"
+                )
+
+            # Compact rent distribution in horizontal format
             st.write("**💰 Rent Distribution:**")
             rent_ranges = {
-                "Under $1,000": len(filtered_df[filtered_df['rent'] < 1000]),
-                "$1,000-$1,500": len(filtered_df[(filtered_df['rent'] >= 1000) & (filtered_df['rent'] < 1500)]),
-                "$1,500-$2,000": len(filtered_df[(filtered_df['rent'] >= 1500) & (filtered_df['rent'] < 2000)]),
-                "$2,000+": len(filtered_df[filtered_df['rent'] >= 2000])
+                "< $1K": len(filtered_df[filtered_df['rent'] < 1000]),
+                "$1K-1.5K": len(filtered_df[(filtered_df['rent'] >= 1000) & (filtered_df['rent'] < 1500)]),
+                "$1.5K-2K": len(filtered_df[(filtered_df['rent'] >= 1500) & (filtered_df['rent'] < 2000)]),
+                "$2K+": len(filtered_df[filtered_df['rent'] >= 2000])
             }
-            
-            for range_name, count in rent_ranges.items():
-                if count > 0:
-                    percentage = (count / len(filtered_df)) * 100
-                    st.write(f"• {range_name}: {count} ({percentage:.1f}%)")
-            
-            # Score quality breakdown
+
+            # Display rent ranges horizontally
+            rent_text = " | ".join([f"{range_name}: {count} ({(count/len(filtered_df)*100):.0f}%)"
+                                   for range_name, count in rent_ranges.items() if count > 0])
+            st.caption(rent_text)
+
+            # Compact score quality breakdown
             st.write("**⭐ Score Quality:**")
             score_ranges = {
-                "Excellent (8.0+)": len(filtered_df[filtered_df['overall_score'] >= 8.0]),
-                "Good (6.0-7.9)": len(filtered_df[(filtered_df['overall_score'] >= 6.0) & (filtered_df['overall_score'] < 8.0)]),
+                "Good (6.0+)": len(filtered_df[filtered_df['overall_score'] >= 6.0]),
                 "Fair (4.0-5.9)": len(filtered_df[(filtered_df['overall_score'] >= 4.0) & (filtered_df['overall_score'] < 6.0)]),
                 "Poor (<4.0)": len(filtered_df[filtered_df['overall_score'] < 4.0])
             }
-            
-            for quality, count in score_ranges.items():
-                if count > 0:
-                    percentage = (count / len(filtered_df)) * 100
-                    st.write(f"• {quality}: {count} ({percentage:.1f}%)")
-            
-            # Top ZIP codes with more details
+
+            # Display score ranges horizontally
+            score_text = " | ".join([f"{quality}: {count} ({(count/len(filtered_df)*100):.0f}%)"
+                                   for quality, count in score_ranges.items() if count > 0])
+            st.caption(score_text)
+
+            # Compact top ZIP codes
             if len(filtered_df) > 0:
                 st.write("**🏘️ Top Areas:**")
                 top_zips = filtered_df.groupby('zip_code').agg({
@@ -655,10 +723,9 @@ def main():
                 }).round(1)
                 top_zips.columns = ['count', 'avg_rent', 'avg_score']
                 top_zips = top_zips.sort_values('count', ascending=False).head(3)
-                
+
                 for zip_code, row in top_zips.iterrows():
-                    st.write(f"• **{zip_code}**: {int(row['count'])} properties")
-                    st.write(f"  Avg: ${row['avg_rent']:,.0f}, Score: {row['avg_score']:.1f}")
+                    st.caption(f"**{zip_code}**: {int(row['count'])} properties | Avg: ${row['avg_rent']:,.0f}, Score: {row['avg_score']:.1f}")
         else:
             st.info("No properties match your current filter criteria.")
             st.write("**💡 Try adjusting:**")
@@ -666,38 +733,38 @@ def main():
             st.write("• Lowering minimum scores")
             st.write("• Reducing bedroom requirements")
             st.write("• Adding more ZIP codes")
-    
+
     # Tabs for different views
     tab1, tab2, tab3, tab4 = st.tabs(["📋 Property List", "🏘️ Neighborhoods", "📈 Score Analysis", "ℹ️ About Scoring"])
-    
+
     with tab1:
         st.subheader("Property Details")
-        
+
         if not filtered_df.empty:
             # Simple approach - show all properties from selected ZIP codes
             st.success(f"⚡ Showing all {len(filtered_df)} properties from selected ZIP codes!")
-            
+
             # Create property table from pre-calculated scores (simple, no caching)
             property_table = create_property_table_from_precalc(filtered_df)
-            
+
             if not property_table.empty:
                 # Add sorting options
                 sort_col1, sort_col2 = st.columns([1, 1])
-                
+
                 with sort_col1:
                     sort_by = st.selectbox(
                         "Sort by:",
                         options=["Overall Score", "Rent", "Safety", "Walkability", "Neighborhood", "Environment"],
                         index=0
                     )
-                
+
                 with sort_col2:
                     sort_order = st.selectbox(
                         "Order:",
                         options=["Highest First", "Lowest First"],
                         index=0
                     )
-                
+
                 # Simple sorting - no complex caching
                 numeric_col = f"_{sort_by.lower().replace(' ', '_')}_numeric"
                 if sort_by == "Overall Score":
@@ -706,13 +773,13 @@ def main():
                     numeric_col = "_rent_numeric"
                 elif sort_by == "Walkability":
                     numeric_col = "_walkability_numeric"
-                
+
                 if numeric_col in property_table.columns:
                     ascending = sort_order == "Lowest First"
                     property_table_sorted = property_table.sort_values(numeric_col, ascending=ascending)
                 else:
                     property_table_sorted = property_table
-                
+
                 # Simple table display - no caching
                 display_columns = [col for col in property_table_sorted.columns if not col.startswith('_')]
                 st.dataframe(
@@ -720,7 +787,7 @@ def main():
                     width="stretch",
                     height=400
                 )
-                
+
                 # Download option
                 csv = property_table_sorted[display_columns].to_csv(index=False)
                 st.download_button(
@@ -731,18 +798,18 @@ def main():
                 )
         else:
             st.info("No properties to display with current filters.")
-    
+
     with tab2:
         st.subheader("Neighborhood Analysis")
-        
+
         if not filtered_df.empty:
             # Simple neighborhood analysis for selected ZIP codes
             st.info(f"Analyzing {len(st.session_state.selected_zips)} selected ZIP codes")
             neighborhood_summary = create_neighborhood_summary_from_precalc(filtered_df)
-            
+
             if not neighborhood_summary.empty:
                 st.write("**ZIP Code Comparison:**")
-                
+
                 # Display neighborhood table
                 display_columns = [col for col in neighborhood_summary.columns if not col.startswith('_')]
                 st.dataframe(
@@ -750,44 +817,44 @@ def main():
                     width="stretch",
                     height=300
                 )
-                
+
                 # Neighborhood insights
                 st.write("**Insights:**")
-                
+
                 # Best overall neighborhood
                 if not neighborhood_summary.empty:
                     best_zip = neighborhood_summary.iloc[0]
                     overall_score = best_zip.get('Overall Score', best_zip.get('Overall', 'N/A'))
                     st.success(f"🏆 **Best Overall:** ZIP {best_zip['ZIP Code']} (Score: {overall_score})")
-                
+
                     # Most affordable
                     if '_avg_rent_numeric' in neighborhood_summary.columns:
                         cheapest_zip = neighborhood_summary.sort_values('_avg_rent_numeric').iloc[0]
                         st.info(f"💰 **Most Affordable:** ZIP {cheapest_zip['ZIP Code']} (Avg: {cheapest_zip.get('Avg Rent', 'N/A')})")
-                    
+
                     # Safest
                     if '_safety_numeric' in neighborhood_summary.columns:
                         safest_zip = neighborhood_summary.sort_values('_safety_numeric', ascending=False).iloc[0]
                         st.info(f"🛡️ **Safest:** ZIP {safest_zip['ZIP Code']} (Safety: {safest_zip.get('Safety', 'N/A')})")
-                    
+
                     # Most walkable
                     if '_walkability_numeric' in neighborhood_summary.columns:
                         walkable_zip = neighborhood_summary.sort_values('_walkability_numeric', ascending=False).iloc[0]
                         st.info(f"🚶 **Most Walkable:** ZIP {walkable_zip['ZIP Code']} (Walkability: {walkable_zip.get('Walkability', 'N/A')})")
         else:
             st.info("No neighborhood data to display with current filters.")
-    
+
     with tab3:
         st.subheader("Score Distribution Analysis")
-        
+
         if not filtered_df.empty:
             # Create score distribution chart
             score_chart = property_display.create_score_distribution_chart(filtered_df)
             st.plotly_chart(score_chart, width="stretch")
-            
+
             # Score correlation analysis
             st.write("**Score Insights:**")
-            
+
             # Calculate some basic statistics
             scorer = PropertyScorer()
             all_scores = []
@@ -801,9 +868,9 @@ def main():
                     'neighborhood': scores['scores']['neighborhood']['score'],
                     'environment': scores['scores']['environment']['score']
                 })
-            
+
             scores_analysis_df = pd.DataFrame(all_scores)
-            
+
             if len(scores_analysis_df) > 1:
                 # Rent vs Score correlation
                 rent_score_corr = scores_analysis_df['rent'].corr(scores_analysis_df['overall'])
@@ -813,20 +880,20 @@ def main():
                     st.info(f"📉 Lower rent properties tend to have better overall scores (correlation: {rent_score_corr:.2f})")
                 else:
                     st.info(f"📊 Rent and overall score show weak correlation (correlation: {rent_score_corr:.2f})")
-                
+
                 # Best value properties
                 scores_analysis_df['value_score'] = scores_analysis_df['overall'] / (scores_analysis_df['rent'] / 1000)
                 best_value_idx = scores_analysis_df['value_score'].idxmax()
                 best_value_rent = scores_analysis_df.loc[best_value_idx, 'rent']
                 best_value_score = scores_analysis_df.loc[best_value_idx, 'overall']
-                
+
                 st.success(f"💎 **Best Value:** ${best_value_rent:,.0f}/month with {best_value_score:.1f}/10 score")
         else:
             st.info("No score data to analyze with current filters.")
-    
+
     with tab4:
         st.subheader("About the Scoring System")
-        
+
         st.markdown("""
         ### 📊 How Properties Are Scored
         
@@ -873,6 +940,7 @@ def main():
         
         **No synthetic or random data is used!**
         """)
+
 
 if __name__ == "__main__":
     main()

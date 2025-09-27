@@ -4,7 +4,9 @@
 - Do not add unnecessary new lines with empty spaces.
 - Use Poetry 2 for dependency management.
 - Use best practices in terms of python coding, file setup, conventions, and framework specific conventions.
-- Main frameworks/libraries: pandas, geopandas, matplotlib, plotly, folium, requests, googlemaps, walkscore, streamlit.
+- Main frameworks/libraries: pandas, geopandas, matplotlib, plotly, pydeck, streamlit, requests, beautifulsoup4, numpy.
+- **Current Implementation**: PyDeck-powered interactive dashboard with clickable property markers
+- **No Synthetic Data Policy**: 100% real data sources, zero fake or randomly generated data
 
 ## Important runtime related information: 
 1. When executing any python commands, use this runtime: /Users/schan/Library/Caches/pypoetry/virtualenvs/austin-housing-x_D9OdhG-py3.12/bin/python

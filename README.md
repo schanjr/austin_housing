@@ -1,6 +1,6 @@
-# Austin Housing Analysis
+# Austin Housing Dashboard
 
-A real-data-driven analysis system to find the best places to rent in Austin, TX under a $1500 monthly budget, based on multiple quality-of-life parameters.
+A **fully operational** interactive rental analysis system for Austin, TX featuring real-time property selection via clickable PyDeck maps. Find the best rental properties with comprehensive scoring, direct Redfin listing links, and transparent data-driven recommendations.
 
 ## 🚨 NO FAKE DATA POLICY
 
@@ -38,9 +38,27 @@ This project aims to balance affordability, safety, convenience, livability, and
    - Flood zones (FEMA maps)
    - Natural disaster risk (hail, wildfire, storm surge, etc.)
 
+## 🚀 **LIVE INTERACTIVE DASHBOARD**
+
+**Access the dashboard at: `http://localhost:8510`**
+
+```bash
+poetry run streamlit run app/dashboard.py --server.port 8510
+```
+
+### ✨ Key Interactive Features
+
+- **🗺️ Clickable PyDeck Map**: Click any property marker for instant detailed information
+- **🔗 Direct Redfin Links**: 94% of properties (14,313/15,251) have clickable listing URLs
+- **📊 Real-Time Filtering**: ZIP code, rent range, bedrooms, bathrooms, and score-based filters
+- **🏠 Property Details Panel**: Address, rent, bed/bath/sqft, score breakdown displayed on right
+- **💾 Session Persistence**: Selected properties remembered across dashboard interactions
+- **🎯 Side-by-Side Layout**: Map on left, property details on right for optimal user experience
+
 ## Real Data Sources
 
-- **Real Rental Listings**: Live property data scraped from Redfin.com (15,666+ properties)
+- **Real Rental Listings**: Live property data scraped from Redfin.com (15,251+ properties)
+- **Direct Redfin URLs**: 94% of properties have clickable links to actual listings
 - **Precise Geocoding**: OpenStreetMap Nominatim API for exact property coordinates
 - **Austin Crime Data**: Real crime statistics from City of Austin Open Data portal
 - **HUD SAFMR Data**: Official 2025 fair market rents by ZIP code
@@ -133,7 +151,7 @@ poetry run generate-data
 poetry run dashboard
 ```
 
-**Dashboard URL**: http://localhost:8501
+**Dashboard URL**: http://localhost:8510
 
 ### Alternative Commands
 
@@ -159,12 +177,13 @@ python src/data/walkscore_acquisition.py        # Walkability (optional)
 
 ### Dashboard Features
 
-#### 🗺️ Interactive Property Map
-- **Individual Property Pins**: Exact locations using geocoded coordinates (not ZIP centroids)
-- **Color-coded Markers**: Green (8-10), Orange (5-8), Red (0-5) overall scores
-- **Detailed Popups**: Score breakdowns, property details, direct listing links
-- **ZIP Code Boundaries**: Optional overlay with selection capabilities
-- **Zoom-responsive**: Adapts to user interaction with stable rendering
+#### 🗺️ Interactive PyDeck Property Map
+- **Clickable Property Markers**: Click any marker for instant property details in right panel
+- **High-Performance Rendering**: PyDeck WebGL-based visualization handles 15,000+ properties smoothly
+- **Color-coded by Score**: Visual scoring representation with transparent methodology
+- **Session State Persistence**: Selected properties remembered across dashboard interactions
+- **Side-by-Side Layout**: Map on left, detailed property information on right
+- **Direct Redfin Integration**: 94% of properties have clickable links to actual listings
 
 #### 🏠 Property Analysis
 - **Sortable Property Table**: Filter by rent, scores, ZIP codes with instant sorting
@@ -214,11 +233,11 @@ Raw Data Sources → Master Dataset → Dashboard
 
 ### Technical Stack
 - **Python 3.12** with Poetry 2.0 for dependency management
-- **Streamlit** for interactive dashboard interface
-- **Folium** for interactive maps with precise property locations
+- **Streamlit** for interactive dashboard interface with session state management
+- **PyDeck** for high-performance WebGL-based interactive maps with clickable markers
 - **Pandas/GeoPandas** for data processing and spatial analysis
 - **OpenStreetMap Nominatim** for free geocoding services
-- **Real Data Sources**: Redfin, Austin Open Data, HUD SAFMR
+- **Real Data Sources**: Redfin (15,251+ properties), Austin Open Data, HUD SAFMR
 
 ## License
 
